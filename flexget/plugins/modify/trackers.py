@@ -72,5 +72,48 @@ class RemoveTrackers(object):
                     tr_search = r'&tr=([^&]*%s[^&]*)' % regexp
                     entry['url'] = re.sub(tr_search, '', entry['url'], re.IGNORECASE | re.UNICODE)
 
+class ModifyTrackers(object):
+
+    """
+        Modify trackers in torrent files to use http protocol.
+
+        Configuration example:
+
+        modify_trackers: true
+
+        This will convert all trackers that are udp URIs into their http equivalent.
+        If the http equivalent is already registered the entry is removed.
+        TIP: You can use global section in configuration to make this enabled on all tasks.
+    """
+
+    def validator(self):
+        from flexget import validator
+        return validator.factory('boolean')
+
+    """
+        Made lower priority than other tracker operations so it is executed afterwards.
+    """
+    @priority(126)
+    def on_task_modify(self, task, config):
+        for entry in task.entries:
+            if 'torrent' in entry:
+                trackers = entry['torrent'].get_multitrackers()
+                for tracker in trackers:
+                    if tracker.startswith('udp://'):
+                        entry['torrent'].remove_multitracker(tracker)
+                        self.log.info('Removed %s tracker from %s' % (tracker, entry['title']))
+                        
+                        replacement = 'http' + tracker[3:]
+                        
+                        if not replacement in entry['torrent'].get_multitrackers():                            
+                            entry['torrent'].add_multitracker(replacement)
+                            self.log.info('Added %s tracker to %s' % (replacement, entry['title']))
+
+            if entry['url'].startswith('magnet:'):
+                # Replace any tracker strings that use udp trackers with the http equivalent
+                tr_search = r'&tr=udp'
+                entry['url'] = re.sub(tr_search, '&tr=http', entry['url'], re.IGNORECASE | re.UNICODE)
+                 
 register_plugin(AddTrackers, 'add_trackers', api_ver=2)
 register_plugin(RemoveTrackers, 'remove_trackers', api_ver=2)
+register_plugin(ModifyTrackers, 'modify_trackers', api_ver=2)
